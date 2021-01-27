@@ -1,110 +1,156 @@
 from gpiozero import LED, Button
-from RpiMotorLib import RpiMotorLib
-import RPi.GPIO as GPIO
-
+import datetime
 import random
 import time
 
+state = "press_green"
 game_over = False
-waiting_on_press = True
-waiting_on_release = False
-press_green_button = True
+green_led_on = True
+change_time = None
+start_time = None
+switch_time = None
+random_seconds = None
+spin_motor = False
+turn_clockwise = True
+step_index = 0
+
+motor_a1 = LED(18) #18
+motor_a2 = LED(23) #23
+motor_b1 = LED(24) #24
+motor_b2 = LED(25) #25
+
+red_led = LED(27) #27
+green_led = LED(22) #22
+
+blue_button = Button(4) #4
+red_button = Button(14) #14
+green_button = Button(15) # 15
 
 
-# 27 Red RGB pin
-# 22 Green RGB pin
-# 14 Red button
-# 15 Green button
-# 4 Blue button (start)
+def turn_motor(clockwise):
+    global step_index
+    if step_index >= 4:
+        step_index = 0
+    if clockwise:
+        print("Clockwise")
+        if step_index == 0:
+            set_step(1, 0, 1, 0)
+        elif step_index == 1:
+            set_step(0, 1, 1, 0)
+        elif step_index == 2:
+            set_step(0, 1, 0, 1)
+        elif step_index == 3:
+            set_step(1, 0, 0, 1)
+        step_index += 1
+    else:
+        print("Counterclockwise")
+        if step_index == 0:
+            set_step(1, 0, 0, 1)
+        elif step_index == 1:
+            set_step(0, 1, 0, 1)
+        elif step_index == 2:
+            set_step(0, 1, 1, 0)
+        elif step_index == 3:
+            set_step(1, 0, 1, 0)
+        step_index += 1
 
-def setup_motor():
-    stepper = RpiMotorLib.BYJMotor("motor", "28BYJ")
-    return stepper
+
+def set_step(w1, w2, w3, w4):
+    global motor_a1, motor_a2, motor_b1, motor_b2
+    motor_a1.value = w1
+    motor_a2.value = w2
+    motor_b1.value = w3
+    motor_b2.value = w4
 
 
-def light_green(red, green):
-    red.off()
-    green.on()
-
-
-def light_red(red, green):
-    red.on()
-    green.off()
-
-
-def stop_game(red, green):
-    red.off()
-    green.off()
-    GPIO.cleanup()
-
-
-def green_activated():
-    global waiting_on_press
-    global game_over
-    if waiting_on_press and press_green_button:
-        waiting_on_press = not waiting_on_press
-    elif not press_green_button:
+def red_pressed():
+    global state, game_over, spin_motor, turn_clockwise
+    if state == "press_red":
+        state = "wait_random"
+    elif state == "wait_random" and not green_led_on:
+        spin_motor = True
+        turn_clockwise = False
+    elif switch_time is not None and (datetime.datetime.now() - switch_time).total_seconds() > 0.5:
         game_over = True
 
 
-def green_held(stepper):
-    global waiting_on_release
-    if waiting_on_release and press_green_button:
-        stepper.motor_run([18, 23, 24, 25], .01, 100, False, False, "half", .05)
-
-
-def red_activated():
-    global waiting_on_press
-    global game_over
-    if waiting_on_press and not press_green_button:
-        waiting_on_press = not waiting_on_press
-    elif press_green_button:
+def green_pressed():
+    global state, game_over, spin_motor, turn_clockwise
+    if state == "press_green":
+        state = "wait_random"
+    elif state == "wait_random" and green_led_on:
+        spin_motor = True
+        turn_clockwise = True
+    elif switch_time is not None and (datetime.datetime.now() - switch_time).total_seconds() > 0.5:
         game_over = True
 
 
-def red_held(stepper):
-    global waiting_on_release
-    if waiting_on_release and not press_green_button:
-        stepper.motor_run([18, 23, 24, 25], .01, 100, False, False, "half", .05)
+def red_released():
+    global state, spin_motor
+    if state == "wait_random" and not green_led_on:
+        spin_motor = False
 
 
-if __name__ == '__main__':
-    red_led = LED(27)
-    green_led = LED(22)
-    red_button = Button(14)
-    green_button = Button(15)
-    blue_button = Button(4)
-    motor = setup_motor()
+def green_released():
+    global state, spin_motor
+    if state == "wait_random" and green_led_on:
+        spin_motor = False
 
-    green_button.when_activated(green_activated())
-    green_button.when_held(green_held(motor))
-    red_button.when_activated(red_activated())
-    red_button.when_held(red_held(motor))
 
-    global waiting_on_release
-    global waiting_on_press
-    global game_over
-    global press_green_button
+def update_led():
+    global red_led, green_led
+    if green_led_on:
+        red_led.off()
+        green_led.on()
+        print("green on")
+    else:
+        green_led.off()
+        red_led.on()
+        print("red on")
 
-    while not game_over:
-        if press_green_button:
-            waiting_on_press = True
-            green_button.wait_for_active(1)
-            if waiting_on_press or game_over:
-                break
-            waiting_on_release = True
-            time.sleep(random.randint(2, 5))
-            light_red(red_led, green_led)
-            waiting_on_release = False
-            press_green_button = False
-        else:
-            waiting_on_press = True
-            red_button.wait_for_active(1)
-            if waiting_on_press or game_over:
-                break
-            waiting_on_release = True
-            time.sleep(random.randint(2, 5))
-            light_green(red_led, green_led)
-            waiting_on_release = False
-            press_green_button = True
-    stop_game(red_led, green_led)
+blue_button.wait_for_press()
+print("3")
+time.sleep(1)
+print("2")
+time.sleep(1)
+print("1")
+time.sleep(1)
+print("go")
+red_button.when_pressed = red_pressed
+green_button.when_pressed = green_pressed
+red_button.when_released = red_released
+green_button.when_released = green_released
+
+update_led()
+
+
+while not game_over:
+    if state == "press_green" or state == "press_red":
+        start_time = None
+        random_seconds = None
+        if change_time is None:
+            change_time = datetime.datetime.now()
+        if (datetime.datetime.now() - change_time).total_seconds() > 1:
+            game_over = True
+            break
+    elif state == "wait_random":
+        if spin_motor:
+            turn_motor(turn_clockwise)
+        change_time = None
+        if random_seconds is None:
+            random_seconds = random.randint(2, 5)
+        if start_time is None:
+            start_time = datetime.datetime.now()
+        if (datetime.datetime.now() - start_time).total_seconds() > random_seconds:
+            green_led_on = not green_led_on
+            update_led()
+            switch_time = datetime.datetime.now()
+            if green_led_on:
+                state = "press_green"
+            else:
+                state = "press_red"
+    time.sleep(0.01)
+
+print("Game over!")
+red_led.off()
+green_led.off()
